@@ -1,7 +1,7 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 
 	"gopkg.in/yaml.v2"
 )
@@ -18,13 +18,20 @@ type NotificationsConfig struct {
 	Recipients []string `yaml:"recipients"`
 }
 
+type SimilarityCheckCfg struct {
+	Distance float64 `default:"0.75" yaml:"similarity_distance,omitempty"`
+}
+
 type CheckConfig struct {
-	Name           string   `yaml:"name"`
-	Regex          []string `yaml:"regex,omitempty"`
-	Logs           []string `yaml:"logs,omitempty"`
-	LookupDepth    int64    `yaml:"lookupDepth"`
-	LookupDelta    int64    `yaml:"lookupDelta,omitempty"`
-	RescanInterval int      `default:"60" yaml:"rescanInterval"`
+	Name           string             `yaml:"name"`
+	Regex          []string           `yaml:"regex,omitempty"`
+	Patterns       []string           `yaml:"patterns,omitempty"`
+	Logs           []string           `yaml:"logs,omitempty"`
+	LookupDepth    int64              `yaml:"lookupDepth"`
+	LookupDelta    int64              `yaml:"lookupDelta,omitempty"`
+	RescanInterval int                `default:"60" yaml:"rescanInterval"`
+	WorkersCount   int                `default:"1" yaml:"numWorkers"`
+	SimilarityCfg  SimilarityCheckCfg `yaml:"similarity,omitempty"`
 }
 
 type Config struct {
@@ -51,7 +58,7 @@ func NewConfig(content []byte) (*Config, error) {
 }
 
 func NewConfigFile(cfgPath string) (*Config, error) {
-	yamlFile, readErr := ioutil.ReadFile(cfgPath)
+	yamlFile, readErr := os.ReadFile(cfgPath)
 	if readErr != nil {
 		panic(readErr)
 	}

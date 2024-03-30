@@ -6,8 +6,14 @@ import (
 	"goct/internal/logger"
 	"os"
 	"strconv"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"go.uber.org/ratelimit"
+)
+
+const (
+	apiRpsLimit = 30
 )
 
 type TelegramReportClient struct {
@@ -17,6 +23,7 @@ type TelegramReportClient struct {
 	Bot         *tgbotapi.BotAPI
 	Debug       bool
 	ChatIDs     []int64
+	RL          ratelimit.Limiter // dummy ratelimiter from https://github.com/uber-go/ratelimit
 }
 
 func NewTelegramClient(cfg config.Config) *TelegramReportClient {
@@ -27,6 +34,7 @@ func NewTelegramClient(cfg config.Config) *TelegramReportClient {
 		MsgTemplate: "Found %s",
 		Bot:         nil,
 		Debug:       cfg.IsVerbose(),
+		RL:          ratelimit.New(apiRpsLimit, ratelimit.Per(time.Second*3)),
 	}
 }
 
@@ -56,6 +64,7 @@ func (c *TelegramReportClient) Report(msg string) error {
 		msg = fmt.Sprintf("\n%s", msg)
 		nMsg := tgbotapi.NewMessage(chatID, msg)
 		nMsg.ParseMode = tgbotapi.ModeMarkdownV2
+		c.RL.Take()
 		if _, err := c.Bot.Send(nMsg); err != nil {
 			return err
 		}

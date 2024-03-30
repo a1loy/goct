@@ -19,11 +19,12 @@ const (
 	recently_issued_cert_name = "recently_issued_cert"
 	invalid_cert              = "invalid_cert"
 	match_by_regexp           = "match_by_regexp"
+	match_by_similarity       = "match_by_similarity"
 )
 
 const (
 	DefaultLookupDelta int64 = 100
-	DefaultLookupDepth int64 = 36
+	DefaultLookupDepth int64 = 60
 )
 
 type NewDetectFuncMap map[string]func(cfg config.Config, checkCfg config.CheckConfig) Check
@@ -32,6 +33,7 @@ var callbacks = NewDetectFuncMap{
 	recently_issued_cert_name: NewRecentlyIssuedCert,
 	invalid_cert:              NewInvalidCertDetect,
 	match_by_regexp:           NewMatchByRegexpCert,
+	match_by_similarity:       NewMatchBySimilarityCert,
 }
 
 type Check interface {
@@ -61,7 +63,7 @@ func runScan(ctx context.Context, detectName string, logClient *client.LogClient
 			func(e *ct.RawLogEntry) {
 				msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
 				if err != nil {
-					logger.Errorf("unable to scan due to %v", err)
+					logger.Debugf("unable to scan due to %v", err)
 					return
 				}
 				processed = 0
@@ -72,7 +74,7 @@ func runScan(ctx context.Context, detectName string, logClient *client.LogClient
 			func(e *ct.RawLogEntry) {
 				msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
 				if err != nil {
-					logger.Errorf("unable to scan due to %v", err)
+					logger.Debugf("unable to scan due to %v", err)
 					return
 				}
 				processed = 0
@@ -122,14 +124,16 @@ func setupChannels(reportEvents bool, storeEvents bool, eventChannels *[]chan mo
 }
 
 func buildDetectFields(checkCfg config.CheckConfig, matcher scanner.Matcher, logClient ctlog.CtLogClient) (time.Time, *scanner.ScannerOptions) {
-	hoursBefore := DefaultLookupDelta
+	minutesBefore := DefaultLookupDelta
 	if checkCfg.LookupDepth != 0 {
-		hoursBefore = checkCfg.LookupDepth
+		minutesBefore = checkCfg.LookupDepth
 	}
-	issuedNotBefore := time.Now().Add(time.Hour * time.Duration(hoursBefore) * (-1))
-	ctOpts, err := ctlog.InitScannerOpts(matcher, checkCfg, logClient)
+	issuedNotBefore := time.Now().Add(time.Minute * time.Duration(minutesBefore) * (-1))
+	ctOpts, err := ctlog.InitScannerOpts(matcher, checkCfg, logClient, issuedNotBefore)
 	if err != nil {
 		panic(err)
 	}
+	logger.Infof("running with scanner opts: BatchSize: %d, NumWorkers: %d, scanning from %d to %d",
+		ctOpts.BatchSize, ctOpts.NumWorkers, ctOpts.StartIndex, ctOpts.EndIndex)
 	return issuedNotBefore, ctOpts
 }

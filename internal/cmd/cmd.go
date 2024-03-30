@@ -34,7 +34,10 @@ func Do(configPath string) {
 		logger.Infof("starting gorutine for %s", r.GetName())
 		wg.Add(1)
 		go func(conf *config.Config, wg *sync.WaitGroup, r detects.Check) {
-			defer wg.Done()
+			defer func() {
+				logger.Infof("goroutine for %s finished", r.GetName())
+				wg.Done()
+			}()
 			r.Init(*cfg)
 			r.Run(ctx)
 		}(cfg, &wg, r)

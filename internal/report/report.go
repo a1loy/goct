@@ -1,11 +1,9 @@
 package report
 
 import (
-	"fmt"
 	"goct/internal/config"
 	"goct/internal/logger"
 	"goct/internal/models"
-	"strings"
 )
 
 type ReportClient interface {
@@ -26,7 +24,7 @@ func ReportEvent(dataChan chan models.DetectMsg, controlChan chan struct{}, repo
 			event := <-dataChan
 			_, ok := filter[event.Hash]
 			if !ok {
-				reportErr := reportClient.Report(formatReportMsg(event))
+				reportErr := reportClient.Report(event.ToMarkdownString())
 				if reportErr != nil {
 					logger.Errorf("unable to report %s", reportErr)
 				}
@@ -34,10 +32,4 @@ func ReportEvent(dataChan chan models.DetectMsg, controlChan chan struct{}, repo
 			}
 		}
 	}
-}
-
-func formatReportMsg(msg models.DetectMsg) string {
-	name := strings.Replace(msg.Name, "_", " ", -1)
-	s := fmt.Sprintf("``` \n[Check]```%s ``` \n[CN] %s\n```", name, msg.CN)
-	return s
 }

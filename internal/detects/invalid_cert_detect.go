@@ -43,18 +43,15 @@ func (c *InvalidCertDetect) Run(ctx context.Context) {
 	logClient, _ := ctlog.NewLogClient((*c.CtLogClients)[0].LogURI)
 	logger.Debugf("scanner opts indexes start %d end %d\n", c.CtScannerOpts.StartIndex, c.CtScannerOpts.EndIndex)
 	reportEvents := c.ReportClient != nil
-	storeEvents := true
-	if c.StoreClient == nil {
-		storeEvents = false
+	storeEvents := false
+	if c.StoreClient != nil {
+		storeEvents = c.StoreClient.IsReady()
 	}
-	storeEvents = c.StoreClient.IsReady()
-
 	var eventChannels []chan models.DetectMsg
 	var signalChannels []chan struct{}
 	setupChannels(reportEvents, storeEvents, &eventChannels, &signalChannels, c.ReportClient, c.StoreClient)
 	// ctx := context.TODO()
 	runScan(ctx, c.Name, logClient, c.CtScannerOpts, eventChannels, signalChannels, c.IsDaemon, c.Config.RescanInterval)
-	logger.Debugf("iteration finised")
 	for _, ch := range signalChannels {
 		close(ch)
 	}

@@ -14,6 +14,10 @@ import (
 	"github.com/google/certificate-transparency-go/jsonclient"
 )
 
+const (
+	LogLookupBatchSize = 100
+)
+
 type CtLogClient struct {
 	LogURI  string
 	client  client.LogClient
