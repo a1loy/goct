@@ -1,0 +1,41 @@
+---
+version: 1
+verbose: false
+numWorkers: 1
+batchSize: 100
+daemon: false
+checks:
+  - name: match_by_regexp
+    regex:
+      - ".*bank.*"
+      # re2 regexp to filter out domains with *.info zone
+      # - $.+(.{0,4}$)|(\.[^r].{0,2}$)|(\.r[^u].{0,2}$)|(\.info.{1,4})$
+    logs:
+      - "https://ct.googleapis.com/logs/us1/argon2024/"
+    lookupDepth: 5 #minutes
+  - name: invalid_cert
+    logs:
+      - "https://ct-agate.yandex.net/2024"
+      # - "https://ct.googleapis.com/logs/us1/argon2024/"
+    lookupDepth: 5
+  - name: match_by_similarity
+    patterns:
+      - "facebook"
+    logs:
+      - "https://ct.googleapis.com/logs/us1/argon2024/"
+    lookupDepth: 10
+    numWorkers: 12
+    similarity:
+      similarity_distance: 0.75
+
+# store:
+#   - type: "sqlite"
+#     tableName: "certs"
+#     uri: "file://tmp/1.db"
+#     flush: true
+
+notifications:
+  - type: telegram
+    recipients:
+    # telegram chat ids
+      - 1337
