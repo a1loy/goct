@@ -59,6 +59,7 @@ func calcProcessTasks(ctx context.Context, wg *sync.WaitGroup, issuedAt time.Tim
 			resp, err := ctLogClient.GetEntries(left, pos)
 			if err != nil {
 				logger.Errorf("unable to get entries %d %d due to %s", left, pos, err)
+				continue
 			}
 			for index := range resp.Entries {
 				// processedCerts++
@@ -66,8 +67,8 @@ func calcProcessTasks(ctx context.Context, wg *sync.WaitGroup, issuedAt time.Tim
 				entry := resp.Entries[reverseIndex]
 				leaf, loadErr := ct.LogEntryFromLeaf(0, &entry)
 				if loadErr != nil {
-					logger.Infof("unable to print leaf with cn %s due to %s \n",
-						leaf.Precert.TBSCertificate.Subject.CommonName, loadErr.Error())
+					logger.Infof("unable to check leaf with index %d due to %s \n",
+						reverseIndex, loadErr.Error())
 					continue
 				}
 				if leaf.Precert == nil {
