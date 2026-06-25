@@ -56,34 +56,20 @@ func InitDetectsFromConfig(cfg *config.Config) map[string]Check {
 
 func runScan(ctx context.Context, detectName string, logClient *client.LogClient, opts *scanner.ScannerOptions, eventChannels []chan models.DetectMsg,
 	signalChannels []chan struct{}, isDaemon bool, rescanInterval int) {
+	onMatch := func(e *ct.RawLogEntry) {
+		msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
+		if err != nil {
+			logger.Debugf("unable to scan due to %v", err)
+			return
+		}
+		for _, ch := range eventChannels {
+			ch <- msg
+		}
+	}
+
 	for {
 		scn := scanner.NewScanner(logClient, *opts)
-		processed := 0
-		err := scn.Scan(ctx,
-			func(e *ct.RawLogEntry) {
-				msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
-				if err != nil {
-					logger.Debugf("unable to scan due to %v", err)
-					return
-				}
-				processed = 0
-				for _, ch := range eventChannels {
-					ch <- msg
-				}
-			},
-			func(e *ct.RawLogEntry) {
-				msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
-				if err != nil {
-					logger.Debugf("unable to scan due to %v", err)
-					return
-				}
-				processed = 0
-				for _, ch := range eventChannels {
-					ch <- msg
-				}
-			})
-
-		if err != nil {
+		if err := scn.Scan(ctx, onMatch, onMatch); err != nil {
 			for _, ch := range signalChannels {
 				close(ch)
 			}
@@ -96,12 +82,23 @@ func runScan(ctx context.Context, detectName string, logClient *client.LogClient
 		case <-ctx.Done():
 			return
 		default:
-			// unable to use scn.certsProcessed :(
-			opts.StartIndex += int64(processed)
-			sleepDuration := time.Duration(rescanInterval) * time.Second
-			logger.Infof("iteration finished, taking a nap for %d", sleepDuration)
-			time.Sleep(sleepDuration)
 		}
+
+		// Resume where this pass ended; extend to the log's current head.
+		sth, err := logClient.GetSTH(ctx)
+		if err != nil {
+			logger.Errorf("unable to refresh STH, re-scanning same window: %v", err)
+		} else {
+			opts.StartIndex = opts.EndIndex
+			opts.EndIndex = int64(sth.TreeSize)
+		}
+		if opts.EndIndex <= opts.StartIndex {
+			logger.Infof("no new entries since index %d", opts.StartIndex)
+		}
+
+		sleepDuration := time.Duration(rescanInterval) * time.Second
+		logger.Infof("iteration finished, taking a nap for %s", sleepDuration)
+		time.Sleep(sleepDuration)
 	}
 }
 
