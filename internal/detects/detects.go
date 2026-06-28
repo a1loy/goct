@@ -55,7 +55,7 @@ func InitDetectsFromConfig(cfg *config.Config) map[string]Check {
 }
 
 func runScan(ctx context.Context, detectName string, logClient *client.LogClient, opts *scanner.ScannerOptions, eventChannels []chan models.DetectMsg,
-	signalChannels []chan struct{}, isDaemon bool, rescanInterval int) {
+	signalChannels []chan struct{}, isDaemon bool, checkCfg config.CheckConfig) {
 	onMatch := func(e *ct.RawLogEntry) {
 		msg, err := ctlog.MsgFromLogEntry(e, detectName, "")
 		if err != nil {
@@ -96,20 +96,20 @@ func runScan(ctx context.Context, detectName string, logClient *client.LogClient
 			logger.Infof("no new entries since index %d", opts.StartIndex)
 		}
 
-		sleepDuration := time.Duration(rescanInterval) * time.Second
+		sleepDuration := time.Duration(checkCfg.RescanInterval) * time.Second
 		logger.Infof("iteration finished, taking a nap for %s", sleepDuration)
 		time.Sleep(sleepDuration)
 	}
 }
 
 func setupChannels(reportEvents bool, storeEvents bool, eventChannels *[]chan models.DetectMsg, signalChannels *[]chan struct{},
-	reportClient report.ReportClient, storeClient store.StoreClient) {
+	reportClient report.ReportClient, storeClient store.StoreClient, decorate report.MsgDecorator) {
 	if reportEvents {
 		reportChan := make(chan models.DetectMsg)
 		reportStopChan := make(chan struct{})
 		*eventChannels = append(*eventChannels, reportChan)
 		*signalChannels = append(*signalChannels, reportStopChan)
-		go report.ReportEvent(reportChan, reportStopChan, reportClient)
+		go report.ReportEvent(reportChan, reportStopChan, reportClient, decorate)
 	}
 	if storeEvents {
 		storeChan := make(chan models.DetectMsg)

@@ -49,9 +49,9 @@ func (c *InvalidCertDetect) Run(ctx context.Context) {
 	}
 	var eventChannels []chan models.DetectMsg
 	var signalChannels []chan struct{}
-	setupChannels(reportEvents, storeEvents, &eventChannels, &signalChannels, c.ReportClient, c.StoreClient)
+	setupChannels(reportEvents, storeEvents, &eventChannels, &signalChannels, c.ReportClient, c.StoreClient, report.EntryDecorator(c.Config))
 	// ctx := context.TODO()
-	runScan(ctx, c.Name, logClient, c.CtScannerOpts, eventChannels, signalChannels, c.IsDaemon, c.Config.RescanInterval)
+	runScan(ctx, c.Name, logClient, c.CtScannerOpts, eventChannels, signalChannels, c.IsDaemon, c.Config)
 	for _, ch := range signalChannels {
 		close(ch)
 	}

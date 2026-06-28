@@ -31,6 +31,7 @@ type CheckConfig struct {
 	LookupDelta    int64              `yaml:"lookupDelta,omitempty"`
 	RescanInterval int                `default:"60" yaml:"rescanInterval"`
 	WorkersCount   int                `default:"1" yaml:"numWorkers"`
+	IncludeEntry   bool               `yaml:"includeEntry,omitempty"`
 	SimilarityCfg  SimilarityCheckCfg `yaml:"similarity,omitempty"`
 }
 
