@@ -37,5 +37,5 @@ func NewRecentlyIssuedCert(cfg config.Config, checkCfg config.CheckConfig) Check
 
 	return &MatchByRegexpCert{Name: checkCfg.Name, ReportClient: report.NewTelegramClient(cfg),
 		StoreClient: storeClient,
-		Config:      checkCfg, CtLogClients: &ctLogClients, Regexs: &regexs, Results: &msgs, IsDaemon: cfg.IsDaemon}
+		Config:      checkCfg, CtLogClients: &ctLogClients, Regexs: &regexs, Results: &msgs, IsDaemon: cfg.IsDaemon()}
 }

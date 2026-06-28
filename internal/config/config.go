@@ -22,12 +22,20 @@ type SimilarityCheckCfg struct {
 	Distance float64 `default:"0.75" yaml:"similarity_distance,omitempty"`
 }
 
+// DaemonConfig holds the optional "daemon:" section. Fields are pointers so an
+// absent key is distinguishable from a zero value: when set, they take
+// precedence over the equivalent command-line flags (see cmd.RunAsDaemon).
+type DaemonConfig struct {
+	RescanInterval *int  `yaml:"rescanInterval,omitempty"`
+	Foreground     *bool `yaml:"foreground,omitempty"`
+}
+
 type CheckConfig struct {
 	Name           string             `yaml:"name"`
 	Regex          []string           `yaml:"regex,omitempty"`
 	Patterns       []string           `yaml:"patterns,omitempty"`
 	Logs           []string           `yaml:"logs,omitempty"`
-	LookupDepth    int64              `yaml:"lookupDepth"`
+	LookupDepth    int64              `yaml:"lookupDepth"` // lookback window in seconds
 	LookupDelta    int64              `yaml:"lookupDelta,omitempty"`
 	RescanInterval int                `default:"60" yaml:"rescanInterval"`
 	WorkersCount   int                `default:"1" yaml:"numWorkers"`
@@ -46,7 +54,7 @@ type Config struct {
 	Notifications  []NotificationsConfig `yaml:"notifications"`
 	Store          []StoreConfig         `yaml:"store,omitempty"`
 	RescanInterval int                   `default:"60" yaml:"rescanInterval,omitempty"`
-	IsDaemon       bool                  `default:"false" yaml:"daemon,omitempty"`
+	Daemon         DaemonConfig          `yaml:"daemon,omitempty"`
 }
 
 func NewConfig(content []byte) (*Config, error) {
@@ -82,7 +90,13 @@ func (c *Config) GetChecksCfg() []CheckConfig {
 	return c.Checks
 }
 
+// IsDaemon reports whether the config requests daemon mode, inferred from the
+// presence of any field in the daemon section.
+func (c *Config) IsDaemon() bool {
+	return c.Daemon.RescanInterval != nil || c.Daemon.Foreground != nil
+}
+
 func (c *Config) EnableHealthCheck() bool {
 	// assuming that we enable healthcheck for daemon by default
-	return c.IsDaemon
+	return c.IsDaemon()
 }

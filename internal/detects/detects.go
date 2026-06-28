@@ -23,6 +23,8 @@ const (
 )
 
 const (
+	// DefaultLookupDelta is the default lookback window, in seconds, used when
+	// a check does not set lookupDepth.
 	DefaultLookupDelta int64 = 100
 	DefaultLookupDepth int64 = 60
 )
@@ -121,11 +123,11 @@ func setupChannels(reportEvents bool, storeEvents bool, eventChannels *[]chan mo
 }
 
 func buildDetectFields(checkCfg config.CheckConfig, matcher scanner.Matcher, logClient ctlog.CtLogClient) (time.Time, *scanner.ScannerOptions) {
-	minutesBefore := DefaultLookupDelta
+	secondsBefore := DefaultLookupDelta
 	if checkCfg.LookupDepth != 0 {
-		minutesBefore = checkCfg.LookupDepth
+		secondsBefore = checkCfg.LookupDepth
 	}
-	issuedNotBefore := time.Now().Add(time.Minute * time.Duration(minutesBefore) * (-1))
+	issuedNotBefore := time.Now().Add(time.Second * time.Duration(secondsBefore) * (-1))
 	ctOpts, err := ctlog.InitScannerOpts(matcher, checkCfg, logClient, issuedNotBefore)
 	if err != nil {
 		panic(err)

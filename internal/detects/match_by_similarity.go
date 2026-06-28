@@ -93,7 +93,7 @@ func NewMatchBySimilarityCert(cfg config.Config, checkCfg config.CheckConfig) Ch
 		StoreClient: storeClient,
 		Config:      checkCfg, CtLogClients: &ctLogClients,
 		SimilarityPatterns: checkCfg.Patterns, SimilarityCfg: checkCfg.SimilarityCfg,
-		Results: &msgs, IsDaemon: cfg.IsDaemon}
+		Results: &msgs, IsDaemon: cfg.IsDaemon()}
 }
 
 func (c *MatchBySimilarityCert) GetConfig() config.CheckConfig {

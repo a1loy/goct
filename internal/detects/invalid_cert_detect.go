@@ -86,7 +86,7 @@ func NewInvalidCertDetect(cfg config.Config, checkCfg config.CheckConfig) Check 
 		ReportClient: report.NewTelegramClient(cfg),
 		StoreClient:  storeClient,
 		Config:       checkCfg, CtLogClients: &ctLogClients,
-		Results: &msgs, IsDaemon: cfg.IsDaemon,
+		Results: &msgs, IsDaemon: cfg.IsDaemon(),
 	}
 }
 
