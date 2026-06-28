@@ -1,14 +1,12 @@
 package ctlog
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"goct/internal/config"
@@ -19,98 +17,65 @@ import (
 	scanner "github.com/google/certificate-transparency-go/scanner"
 )
 
-func calcPostTasks(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, treeSize int64, delta int64, tasksChan chan []int64, foundChan chan bool) {
-	defer func() {
-		wg.Done()
-		logger.Debugf("exiting from calcPostTasks routine")
-		close(tasksChan)
-		cancel()
-	}()
-	for pos := treeSize - 1; pos > 0; pos -= delta {
-		left := pos - delta
-		if left < 0 {
-			left = 0
-		}
-		select {
-		case tasksChan <- []int64{left, pos}:
-			logger.Debugf("posting %d %d\n", left, pos)
-		case <-foundChan:
-			return
+// calcIndexFetchRetries bounds the per-entry fetch retries during the boundary
+// search, so a flaky/rate-limited log doesn't make the search loop forever.
+const calcIndexFetchRetries = 3
+
+// entryAddTime fetches a single log entry and returns the time it was added to
+// the log (its SCT timestamp), retrying a few times on transient errors. The
+// timestamp lives on every entry type, so no precert check is needed.
+func entryAddTime(ctLogClient CtLogClient, index int64) (time.Time, error) {
+	var lastErr error
+	for attempt := 0; attempt < calcIndexFetchRetries; attempt++ {
+		resp, err := ctLogClient.GetEntries(index, index)
+		switch {
+		case err != nil:
+			lastErr = err
+		case len(resp.Entries) == 0:
+			lastErr = fmt.Errorf("empty entries response for index %d", index)
 		default:
-			logger.Debugf("unable to post, waiting...\n")
-			time.Sleep(time.Second * 1)
+			leaf, loadErr := ct.LogEntryFromLeaf(index, &resp.Entries[0])
+			if loadErr != nil {
+				return time.Time{}, loadErr
+			}
+			return ct.TimestampToTime(leaf.Leaf.TimestampedEntry.Timestamp), nil
 		}
+		time.Sleep(time.Second * time.Duration(attempt+1))
 	}
+	return time.Time{}, lastErr
 }
 
-func calcProcessTasks(ctx context.Context, wg *sync.WaitGroup, issuedAt time.Time, tasksChan chan []int64, foundChan chan bool, resChan chan int64,
-	ctLogClient CtLogClient) {
-	defer func() {
-		logger.Debugf("exiting from calcProcessTasks routine")
-	}()
-	for {
-		select {
-		case pair, chanOpen := <-tasksChan:
-			if !chanOpen {
-				return
-			}
-			left, pos := pair[0], pair[1]
-			logger.Infof("received task to retrieve %d %d", left, pos)
-			resp, err := ctLogClient.GetEntries(left, pos)
-			if err != nil {
-				logger.Errorf("unable to get entries %d %d due to %s", left, pos, err)
-				continue
-			}
-			for index := range resp.Entries {
-				// processedCerts++
-				reverseIndex := len(resp.Entries) - index - 1
-				entry := resp.Entries[reverseIndex]
-				leaf, loadErr := ct.LogEntryFromLeaf(0, &entry)
-				if loadErr != nil {
-					logger.Infof("unable to check leaf with index %d due to %s \n",
-						reverseIndex, loadErr.Error())
-					continue
-				}
-				if leaf.Precert == nil {
-					logger.Debugf("unable to read leaf cert at index %d\n", reverseIndex)
-					continue
-				}
-				addTime := ct.TimestampToTime(leaf.Leaf.TimestampedEntry.Timestamp)
-				if addTime.Before(issuedAt) {
-					logger.Debugf("found cert issued at %s", addTime)
-					// logger.Debugf("left = %d pos = %d index = %d = certs_processed = %d", left, pos, reverseIndex, processedCerts)
-					logger.Debugf("end pos %d", int(left)+reverseIndex)
-					resChan <- left + int64(reverseIndex) + 1
-					foundChan <- true
-					return
-				}
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func CalcIndex(ctLogClient CtLogClient, issuedAt time.Time, workersCount int) int64 {
+// CalcIndex returns the first log index whose entry was added at or after
+// issuedAt — i.e. where a scan should start to cover everything newer than the
+// cutoff. Entries are appended in log order, so add-time is effectively
+// monotonic in index and we can binary-search the boundary in O(log treeSize)
+// single-entry fetches, which scales to full-size CT logs.
+//
+// On an unrecoverable fetch error it fails safe by returning treeSize (an empty
+// scan window) rather than guessing a too-early index; the next rescan retries.
+func CalcIndex(ctLogClient CtLogClient, issuedAt time.Time) int64 {
 	treeSize := ctLogClient.GetTreeSize()
-	logger.Debugf("tree size = %d", treeSize)
-	logger.Debugf("looking for certs issued after %s", issuedAt.String())
-	var delta int64 = LogLookupBatchSize
-	bufSize := 32
-	ctx, ctxWithCancel := context.WithCancel(context.Background())
-	pairsChan := make(chan []int64, bufSize)
-	foundChan := make(chan bool)
-	resChan := make(chan int64, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go calcPostTasks(ctx, ctxWithCancel, &wg, treeSize, delta, pairsChan, foundChan)
-
-	for i := 0; i < workersCount; i++ {
-		logger.Debugf("starting calcProcessTasks\n")
-		go calcProcessTasks(ctx, &wg, issuedAt, pairsChan, foundChan, resChan, ctLogClient)
+	if treeSize <= 0 {
+		return 0
 	}
-	wg.Wait()
-	return <-resChan
+	logger.Debugf("tree size = %d, looking for first entry added at/after %s", treeSize, issuedAt)
+
+	lo, hi := int64(0), treeSize
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		addTime, err := entryAddTime(ctLogClient, mid)
+		if err != nil {
+			logger.Errorf("CalcIndex: giving up at entry %d, scanning nothing this pass: %v", mid, err)
+			return treeSize
+		}
+		if addTime.Before(issuedAt) {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	logger.Debugf("CalcIndex: starting scan at index %d", lo)
+	return lo
 }
 
 func InitScannerOpts(matcher scanner.Matcher, cfg config.CheckConfig,
@@ -127,7 +92,7 @@ func InitScannerOpts(matcher scanner.Matcher, cfg config.CheckConfig,
 	opts.NumWorkers = numWorkers
 	opts.ParallelFetch = numWorkers
 	// opts.TickTime = time.Duration(cfg.TickTime) * time.Second
-	opts.StartIndex = CalcIndex(logClient, issuedNotBefore, numWorkers)
+	opts.StartIndex = CalcIndex(logClient, issuedNotBefore)
 	opts.EndIndex = logClient.GetTreeSize()
 	// opts.Tickers = []scanner.Ticker{scanner.LogTicker{}}
 	// opts.Quiet = false
